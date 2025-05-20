@@ -52,13 +52,9 @@ def load_data(data_root, batch_size, test_batch_size):
         )
         
         # 创建数据加载器
-        train_loader = torch.utils.data.DataLoader(
-            train_dataset, batch_size=batch_size, shuffle=True
-        )
+        train_loader = torch.utils.data.DataLoader(dataset=all_trainset, batch_size=64, shuffle=True, num_workers=4)
         
-        test_loader = torch.utils.data.DataLoader(
-            test_dataset, batch_size=test_batch_size, shuffle=False
-        )
+        test_loader = torch.utils.data.DataLoader(dataset=all_trainset, batch_size=64, shuffle=True, num_workers=4)
         
         return train_loader, test_loader
     
@@ -107,7 +103,7 @@ def test(model, device, test_loader, log_file=None):
     
     if log_file:
         log_file.write(log_message + '\n')
-    
+    torch.cuda.empty_cache()
     return accuracy
 
 # 主函数
