@@ -87,15 +87,15 @@ def warp_im(im, M, dshape):
 
 # 获取面部的掩码，用于后续替换操作
 def get_face_mask(im, landmarks):
-    im = np.zeros(im.shape[:2], dtype=np.float64)
+    mask = np.zeros(im.shape[:2], dtype=np.float64)
     for group in OVERLAY_POINTS:
         hull = cv2.convexHull(landmarks[group])
-        cv2.fillConvexPoly(im, hull, color=1)
-    im = np.array([im, im, im]).transpose((1, 2, 0))
+        cv2.fillConvexPoly(mask, hull, color=1)
+    mask = np.array([im, im, im]).transpose((1, 2, 0))
     # 对掩码进行模糊处理，得到平滑的过渡效果
-    im = (cv2.GaussianBlur(im, (FEATHER_AMOUNT, FEATHER_AMOUNT), 0) > 0) * 1.0
-    im = cv2.GaussianBlur(im, (FEATHER_AMOUNT, FEATHER_AMOUNT), 0)
-    return im
+    mask = (cv2.GaussianBlur(im, (FEATHER_AMOUNT, FEATHER_AMOUNT), 0) > 0) * 1.0
+    mask = cv2.GaussianBlur(im, (FEATHER_AMOUNT, FEATHER_AMOUNT), 0)
+    return mask
 
 # 对两张图像进行颜色校正，使它们的色调更加一致
 def correct_colours(im1, im2, landmarks1):
