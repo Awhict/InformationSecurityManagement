@@ -1,15 +1,15 @@
-#导入第三方库
+# Import third-party libraries
 import cv2
 import dlib
 import numpy as np
 
-# 配置常量：用于面部特征点预测器路径、缩放比例、羽化量、颜色校正模糊比例等
+# Constants for configuration
 PREDICTOR_PATH = "shape_predictor_68_face_landmarks.dat"
 SCALE_FACTOR = 1
 FEATHER_AMOUNT = 11
 COLOUR_CORRECT_BLUR_FRAC = 0.6
 
-# 定义面部特征点的索引范围
+# Landmark indices
 FACE_POINTS = list(range(17, 68))
 MOUTH_POINTS = list(range(48, 61))
 RIGHT_BROW_POINTS = list(range(17, 22))
@@ -19,121 +19,185 @@ LEFT_EYE_POINTS = list(range(42, 48))
 NOSE_POINTS = list(range(27, 35))
 JAW_POINTS = list(range(0, 17))
 
-# 用于面部对齐的关键特征点和重叠区域的特征点
 ALIGN_POINTS = (LEFT_BROW_POINTS + RIGHT_EYE_POINTS + LEFT_EYE_POINTS +
                 RIGHT_BROW_POINTS + NOSE_POINTS + MOUTH_POINTS)
+
 OVERLAY_POINTS = [
     LEFT_EYE_POINTS + RIGHT_EYE_POINTS + LEFT_BROW_POINTS + RIGHT_BROW_POINTS,
     NOSE_POINTS + MOUTH_POINTS,
 ]
 
-# 使用dlib进行面部检测和特征点预测
+# Initialize dlib detectors
 detector = dlib.get_frontal_face_detector()
 predictor = dlib.shape_predictor(PREDICTOR_PATH)
 
-# 自定义异常类：用于处理没有检测到人脸或检测到多张人脸的情况
+# Custom exceptions
 class TooManyFaces(Exception):
     pass
 
 class NoFaces(Exception):
     pass
 
-# 获取图像中的面部特征点
-def get_landmarks(im):
-    rects = detector(im, 1)
-    if len(rects) > 1:
-        raise TooManyFaces("检测到多个人脸")
-    if len(rects) == 0:
-        raise NoFaces("没有检测到任何人脸")
-    return np.matrix([[p.x, p.y] for p in predictor(im, rects[0]).parts()])
+def get_landmarks(image):
+    """
+    Detect facial landmarks from the image.
 
-# 读取图像并获取特征点
-def read_im_and_landmarks(fname):
-    im = cv2.imread(fname, cv2.IMREAD_COLOR)
-    im = cv2.resize(im, (im.shape[1] * SCALE_FACTOR,
-                         im.shape[0] * SCALE_FACTOR))
-    s = get_landmarks(im)
-    return im, s
+    Args:
+        image (np.ndarray): Input image.
 
-# 根据两组特征点生成仿射变换矩阵
+    Returns:
+        np.matrix: Detected landmark coordinates.
+    """
+    faces = detector(image, 1)
+    if len(faces) > 1:
+        raise TooManyFaces("More than one face detected.")
+    if len(faces) == 0:
+        raise NoFaces("No faces detected.")
+    return np.matrix([[p.x, p.y] for p in predictor(image, faces[0]).parts()])
+
+def read_image_and_landmarks(filename):
+    """
+    Read image from file and detect landmarks.
+
+    Args:
+        filename (str): Path to the image.
+
+    Returns:
+        tuple: Image and its landmarks.
+    """
+    image = cv2.imread(filename, cv2.IMREAD_COLOR)
+    image = cv2.resize(image, (image.shape[1] * SCALE_FACTOR, image.shape[0] * SCALE_FACTOR))
+    landmarks = get_landmarks(image)
+    return image, landmarks
+
 def transformation_from_points(points1, points2):
+    """
+    Compute affine transformation matrix between two sets of points.
+
+    Args:
+        points1 (np.matrix): Source points.
+        points2 (np.matrix): Destination points.
+
+    Returns:
+        np.matrix: 3x3 transformation matrix.
+    """
     points1 = points1.astype(np.float64)
     points2 = points2.astype(np.float64)
+
     c1 = np.mean(points1, axis=0)
     c2 = np.mean(points2, axis=0)
+
     points1 -= c1
     points2 -= c2
+
     s1 = np.std(points1)
     s2 = np.std(points2)
+
     points1 /= s1
     points2 /= s2
+
     U, S, Vt = np.linalg.svd(points1.T * points2)
     R = (U * Vt).T
-    return np.vstack([np.hstack(((s2 / s1) * R,
-                                 c2.T - (s2 / s1) * R * c1.T)),
-                      np.matrix([0., 0., 1.])])
 
-# 对图像进行仿射变换
-def warp_im(im, M, dshape):
-    output_im = np.zeros(dshape, dtype=im.dtype)
-    # 使用仿射变换对图像进行扭曲
-    cv2.warpAffine(im,
-                   M[:2],
-                   (dshape[1], dshape[0]),
-                   dst=output_im,
-                   borderMode=cv2.BORDER_TRANSPARENT,
-                   flags=cv2.WARP_INVERSE_MAP)
-    return output_im
+    return np.vstack([
+        np.hstack(((s2 / s1) * R, c2.T - (s2 / s1) * R * c1.T)),
+        np.matrix([0., 0., 1.])
+    ])
 
-# 获取面部的掩码，用于后续替换操作
-def get_face_mask(im, landmarks):
-    mask = np.zeros(im.shape[:2], dtype=np.float64)
+def warp_image(image, matrix, target_shape):
+    """
+    Warp image using the affine transformation matrix.
+
+    Args:
+        image (np.ndarray): Input image.
+        matrix (np.matrix): Affine transformation matrix.
+        target_shape (tuple): Output shape.
+
+    Returns:
+        np.ndarray: Warped image.
+    """
+    output_image = np.zeros(target_shape, dtype=image.dtype)
+    cv2.warpAffine(
+        image,
+        matrix[:2],
+        (target_shape[1], target_shape[0]),
+        dst=output_image,
+        borderMode=cv2.BORDER_TRANSPARENT,
+        flags=cv2.WARP_INVERSE_MAP
+    )
+    return output_image
+
+def get_face_mask(image, landmarks):
+    """
+    Create a mask for the face using facial landmarks.
+
+    Args:
+        image (np.ndarray): Input image.
+        landmarks (np.matrix): Landmark coordinates.
+
+    Returns:
+        np.ndarray: Smoothed mask image.
+    """
+    mask = np.zeros(image.shape[:2], dtype=np.float64)
+
     for group in OVERLAY_POINTS:
         hull = cv2.convexHull(landmarks[group])
         cv2.fillConvexPoly(mask, hull, color=1)
-    mask = np.array([im, im, im]).transpose((1, 2, 0))
-    # 对掩码进行模糊处理，得到平滑的过渡效果
-    mask = (cv2.GaussianBlur(im, (FEATHER_AMOUNT, FEATHER_AMOUNT), 0) > 0) * 1.0
-    mask = cv2.GaussianBlur(im, (FEATHER_AMOUNT, FEATHER_AMOUNT), 0)
-    return mask
 
-# 对两张图像进行颜色校正，使它们的色调更加一致
-def correct_colours(im1, im2, landmarks1):
+    mask = cv2.GaussianBlur(mask, (FEATHER_AMOUNT, FEATHER_AMOUNT), 0)
+    mask = mask[..., np.newaxis]
+    return np.repeat(mask, 3, axis=2)
+
+def correct_colours(reference_image, target_image, landmarks):
+    """
+    Correct the colors of the target image to match the reference image.
+
+    Args:
+        reference_image (np.ndarray): Source image.
+        target_image (np.ndarray): Warped image.
+        landmarks (np.matrix): Landmark points.
+
+    Returns:
+        np.ndarray: Color-corrected image.
+    """
     blur_amount = COLOUR_CORRECT_BLUR_FRAC * np.linalg.norm(
-        np.mean(landmarks1[LEFT_EYE_POINTS], axis=0) -
-        np.mean(landmarks1[RIGHT_EYE_POINTS], axis=0))
+        np.mean(landmarks[LEFT_EYE_POINTS], axis=0) -
+        np.mean(landmarks[RIGHT_EYE_POINTS], axis=0)
+    )
     blur_amount = int(blur_amount)
     if blur_amount % 2 == 0:
         blur_amount += 1
-    im1_blur = cv2.GaussianBlur(im1, (blur_amount, blur_amount), 0)
-    im2_blur = cv2.GaussianBlur(im2, (blur_amount, blur_amount), 0)
-    im2_blur += (128 * (im2_blur <= 1.0)).astype(im2_blur.dtype)
-    return (im2.astype(np.float64) * im1_blur.astype(np.float64) /
-            im2_blur.astype(np.float64))
 
-# 主函数：负责处理用户输入和调用面部替换的功能
+    reference_blur = cv2.GaussianBlur(reference_image, (blur_amount, blur_amount), 0)
+    target_blur = cv2.GaussianBlur(target_image, (blur_amount, blur_amount), 0)
+
+    target_blur += (128 * (target_blur <= 1.0)).astype(target_blur.dtype)
+
+    return (target_image.astype(np.float64) * reference_blur.astype(np.float64) /
+            target_blur.astype(np.float64))
+
 def main():
     image_path1 = input("输入第一张图片的路径：")
     image_path2 = input("输入第二张图片的路径：")
-    im1, landmarks1 = read_im_and_landmarks(image_path1)
-    im2, landmarks2 = read_im_and_landmarks(image_path2)
 
-    # 面部替换的步骤
-    M = transformation_from_points(landmarks1[ALIGN_POINTS], landmarks2[ALIGN_POINTS])
-    mask = get_face_mask(im2, landmarks2)
-    warped_mask = warp_im(mask, M, im1.shape)
-    combined_mask = np.max([get_face_mask(im1, landmarks1), warped_mask], axis=0)
-    warped_im2 = warp_im(im2, M, im1.shape)
-    warped_corrected_im2 = correct_colours(im1, warped_im2, landmarks1)
-    # 使用掩码将两张图片结合在一起，完成面部替换
-    output_im = im1 * (1.0 - combined_mask) + warped_corrected_im2 * combined_mask
+    image1, landmarks1 = read_image_and_landmarks(image_path1)
+    image2, landmarks2 = read_image_and_landmarks(image_path2)
 
-    cv2.imwrite('output.jpg', output_im)
+    transformation_matrix = transformation_from_points(landmarks1[ALIGN_POINTS], landmarks2[ALIGN_POINTS])
+
+    mask2 = get_face_mask(image2, landmarks2)
+    warped_mask = warp_image(mask2, transformation_matrix, image1.shape)
+
+    mask1 = get_face_mask(image1, landmarks1)
+    combined_mask = np.max([mask1, warped_mask], axis=0)
+
+    warped_image2 = warp_image(image2, transformation_matrix, image1.shape)
+    color_corrected_image2 = correct_colours(image1, warped_image2, landmarks1)
+
+    output_image = image1 * (1.0 - combined_mask) + color_corrected_image2 * combined_mask
+
+    cv2.imwrite('output.jpg', output_image.astype(np.uint8))
     print("面部替换完成，结果保存为 output.jpg")
 
-# 程序入口
 if __name__ == '__main__':
     main()
-
-
-
