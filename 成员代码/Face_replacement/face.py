@@ -2,6 +2,7 @@
 import cv2
 import dlib
 import numpy as np
+import os
 
 # 配置常量：用于面部特征点预测器路径、缩放比例、羽化量、颜色校正模糊比例等
 PREDICTOR_PATH = "shape_predictor_68_face_landmarks.dat"
@@ -113,10 +114,29 @@ def correct_colours(im1, im2, landmarks1):
 
 # 主函数：负责处理用户输入和调用面部替换的功能
 def main():
-    image_path1 = input("输入第一张图片的路径：")
-    image_path2 = input("输入第二张图片的路径：")
-    im1, landmarks1 = read_im_and_landmarks(image_path1)
-    im2, landmarks2 = read_im_and_landmarks(image_path2)
+    image_path1_raw = input("输入第一张图片的路径：")
+    image_path2_raw = input("输入第二张图片的路径：")
+
+        # 验证路径1
+    image_path1 = os.path.abspath(image_path1_raw)
+    if not (os.path.exists(image_path1) and os.path.isfile(image_path1)):
+        print(f"错误：文件 {image_path1} 不存在或不是一个有效文件。")
+        return
+        # 验证路径2
+    image_path2 = os.path.abspath(image_path2_raw)
+    if not (os.path.exists(image_path2) and os.path.isfile(image_path2)):
+        print(f"错误：文件 {image_path2} 不存在或不是一个有效文件。")
+        return
+
+    try:
+        im1, landmarks1 = read_im_and_landmarks(image_path1)
+        im2, landmarks2 = read_im_and_landmarks(image_path2)
+    except (TooManyFaces, NoFaces) as e:
+        print(f"处理图片时发生错误: {e}")
+        return
+    except Exception as e:
+        print(f"发生未知错误: {e}")
+        return
 
     # 面部替换的步骤
     M = transformation_from_points(landmarks1[ALIGN_POINTS], landmarks2[ALIGN_POINTS])
