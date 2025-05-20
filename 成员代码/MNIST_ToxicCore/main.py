@@ -143,16 +143,16 @@ clean_rate = 0.5
 poison_rate = 0.5
 
 #从库中获取训练集
-trainset_all = datasets.MNIST(root="../data", download=True, train=True)
-trainset = select_subset(trainset_all)
-all_datasets = fetch_datasets(full_dataset=trainset_all, trainset=trainset, ratio=[poison_rate, clean_rate])
+full_train_dataset = datasets.MNIST(root="../data", download=True, train=True)
+trainset = select_subset(full_train_dataset)
+all_datasets = fetch_datasets(full_dataset=full_train_dataset, trainset=trainset, ratio=[poison_rate, clean_rate])
 poison_trainset = all_datasets['poisonTrain']
 clean_trainset = all_datasets['cleanTrain']
 all_trainset = poison_trainset.__add__(clean_trainset)
 
 #从库中获取测试集
-clean_test_all = datasets.MNIST(root='../data', download=True, train=False)
-clean_test = select_subset(clean_test_all)
+full_clean_test_dataset = datasets.MNIST(root='../data', download=True, train=False)
+clean_test = select_subset(full_clean_test_dataset)
 clean_testset = []
 for img, label in clean_test:
     img = np.array(img)
@@ -160,7 +160,7 @@ for img, label in clean_test:
     clean_testset.append((img, label))
 
 #数据加载器
-trainset_dataloader = DataLoader(dataset=all_trainset, batch_size=64, shuffle=True)
+trainset_dataloader = DataLoader(dataset=all_trainset, batch_size=64, shuffle=True, num_workers=4)
 
 print("开始对模型投毒.......................")
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
@@ -193,6 +193,7 @@ for epoch in range(epoch):
     file.write("Epoch: " + str(epoch + 1) + ", loss: " + str(running_loss) + "\n")
     loss_list.append(running_loss)
     file.flush()
+    
 
     # 在循环体外部测试样本准确率
     print("测试每一轮干净样本准确率: Epoch " + str(epoch + 1) + " ------------------")
@@ -211,6 +212,7 @@ for epoch in range(epoch):
 
     #plot_misclassified_images(net, clean_testset, device)
     #plot_correctly_classified_images(net, clean_testset, device, num_images=10)
+    torch.cuda.empty_cache()
 file.close()
 plot_misclassified_images(net, clean_testset, device)
 plot_correctly_classified_images(net, clean_testset, device, num_images=10)
