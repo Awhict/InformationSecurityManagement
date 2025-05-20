@@ -177,11 +177,29 @@ def correct_colours(reference_image, target_image, landmarks):
             target_blur.astype(np.float64))
 
 def main():
-    image_path1 = input("输入第一张图片的路径：")
-    image_path2 = input("输入第二张图片的路径：")
+    image_path1_raw = input("输入第一张图片的路径：")
+    image_path2_raw = input("输入第二张图片的路径：")
 
-    image1, landmarks1 = read_image_and_landmarks(image_path1)
-    image2, landmarks2 = read_image_and_landmarks(image_path2)
+        # 验证路径1
+    image_path1 = os.path.abspath(image_path1_raw)
+    if not (os.path.exists(image_path1) and os.path.isfile(image_path1)):
+        print(f"错误：文件 {image_path1} 不存在或不是一个有效文件。")
+        return
+        # 验证路径2
+    image_path2 = os.path.abspath(image_path2_raw)
+    if not (os.path.exists(image_path2) and os.path.isfile(image_path2)):
+        print(f"错误：文件 {image_path2} 不存在或不是一个有效文件。")
+        return
+
+    try:
+        image1, landmarks1 = read_im_and_landmarks(image_path1)
+        image2, landmarks2 = read_im_and_landmarks(image_path2)
+    except (TooManyFaces, NoFaces) as e:
+        print(f"处理图片时发生错误: {e}")
+        return
+    except Exception as e:
+        print(f"发生未知错误: {e}")
+        return
 
     transformation_matrix = transformation_from_points(landmarks1[ALIGN_POINTS], landmarks2[ALIGN_POINTS])
 
