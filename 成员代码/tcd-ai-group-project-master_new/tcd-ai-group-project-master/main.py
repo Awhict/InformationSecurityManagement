@@ -196,3 +196,43 @@ def title(y_pred, y_test, target_names, i):
 #
 #
 # plot_confusion_matrix(y_test, y_pred, "matriz")
+
+
+if __name__ == '__main__':
+    import argparse
+
+    parser = argparse.ArgumentParser(description='Face Recognition with Dimensionality Reduction')
+    parser.add_argument('--method', type=str, default='pca',
+                        choices=['pca', 'ica', 'nmf', 'lda'],
+                        help='Dimensionality reduction method to use')
+    parser.add_argument('--n_components', type=int, default=100,
+                        help='Number of components for dimensionality reduction')
+    args = parser.parse_args()
+
+    # 加载数据
+    dataset = fetch_dataset()
+    n_samples, height, width, X, n_features, y, target_names, n_classes = fetch_data_details(dataset)
+    X_train, X_test, y_train, y_test = split_data(X, y)
+
+    # 降维选择
+    if args.method == 'pca':
+        model, eigenfaces = dimensionality_reduction_PCA(args.n_components, X_train, height, width)
+        X_train_model, X_test_model = train_text_transform_Model(model, X_train, X_test)
+    elif args.method == 'ica':
+        model, eigenfaces = dimensionality_reduction_ICA(args.n_components, X_train, height, width)
+        X_train_model, X_test_model = train_text_transform_Model(model, X_train, X_test)
+    elif args.method == 'nmf':
+        model, eigenfaces = dimensionality_reduction_NMF(args.n_components, X_train, height, width)
+        X_train_model, X_test_model = train_text_transform_Model(model, X_train, X_test)
+    elif args.method == 'lda':
+        model, pca = dimensionality_reduction_LDA(args.n_components, X_train, y_train)
+        X_train_model, X_test_model = train_text_transform_LDA(model, pca, X_train, X_test)
+    else:
+        raise ValueError("Unsupported method.")
+
+    # 分类与预测
+    clf = classification_svc(X_train_model, y_train)
+    y_pred = prediction(clf, X_test_model)
+
+    # 输出报告
+    print_report(y_test, y_pred, target_names, n_classes)
