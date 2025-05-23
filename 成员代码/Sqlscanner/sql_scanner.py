@@ -262,8 +262,8 @@ class SQLiScanner:
 
         for payload, db_type in test_payloads:
             try:
-                # 动态调整超时时间
-                timeout = random.randint(8, 15)
+                # 动态设置请求超时时间，提升灵活性
+                timeout = random.randint(8, 15)  # 设置请求超时范围为 8-15 秒
                 # 随机选择一个代理
                 random_proxy = random.choice(proxies)
                 if target_type == 'url':
