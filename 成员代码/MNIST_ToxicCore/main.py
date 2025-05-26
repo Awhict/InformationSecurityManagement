@@ -8,6 +8,12 @@ import numpy as np
 import random
 import argparse
 from datetime import datetime
+import requests
+import gdown  # 用于从Google Drive下载文件
+
+# 模型和数据集链接
+MODEL_URL = "https://drive.google.com/uc?id=1pHtflNlxmxGMsMxPoHe1ytam1p4H4OUA"
+DATASET_URL = "http://yann.lecun.com/exdb/mnist/"
 
 # 设置随机种子确保可重复性
 def set_seed(seed=42):
@@ -32,6 +38,24 @@ class Net(nn.Module):
         x = self.fc2(x)
         return F.log_softmax(x, dim=1)
 
+# 下载预训练模型
+def download_model(save_path="./pretrained_model.pt"):
+    try:
+        if not os.path.exists(os.path.dirname(save_path)):
+            os.makedirs(os.path.dirname(save_path))
+            
+        if not os.path.exists(save_path):
+            print(f"正在下载预训练模型到 {save_path}...")
+            gdown.download(MODEL_URL, save_path, quiet=False)
+            print("模型下载完成")
+        else:
+            print(f"预训练模型已存在于 {save_path}")
+            
+        return save_path
+    except Exception as e:
+        print(f"下载预训练模型时出错: {e}")
+        return None
+
 # 数据加载与预处理
 def load_data(data_root, batch_size, test_batch_size):
     try:
@@ -48,13 +72,23 @@ def load_data(data_root, batch_size, test_batch_size):
         
         # 加载测试集
         test_dataset = datasets.MNIST(
-            root=data_root, train=False, transform=transform
+            root=data_root, train=False, download=True, transform=transform
         )
         
         # 创建数据加载器
-        train_loader = torch.utils.data.DataLoader(dataset=all_trainset, batch_size=64, shuffle=True, num_workers=4)
+        train_loader = torch.utils.data.DataLoader(
+            dataset=train_dataset, 
+            batch_size=batch_size, 
+            shuffle=True, 
+            num_workers=4
+        )
         
-        test_loader = torch.utils.data.DataLoader(dataset=all_trainset, batch_size=64, shuffle=True, num_workers=4)
+        test_loader = torch.utils.data.DataLoader(
+            dataset=test_dataset, 
+            batch_size=test_batch_size, 
+            shuffle=False, 
+            num_workers=4
+        )
         
         return train_loader, test_loader
     
@@ -120,6 +154,8 @@ def main():
     parser.add_argument('--seed', type=int, default=42, help='Random seed')
     parser.add_argument('--log_interval', type=int, default=10, help='How many batches to wait before logging training status')
     parser.add_argument('--use_cuda', action='store_true', help='Use CUDA if available')
+    parser.add_argument('--use_pretrained', action='store_true', help='Use pre-trained model')
+    parser.add_argument('--pretrained_path', type=str, default='./pretrained_model.pt', help='Path to pre-trained model')
     args = parser.parse_args()
     
     # 设置随机种子
@@ -153,6 +189,18 @@ def main():
         
         # 初始化模型
         model = Net().to(device)
+        
+        # 加载预训练模型（如果指定）
+        if args.use_pretrained:
+            if args.pretrained_path and os.path.exists(args.pretrained_path):
+                model_path = args.pretrained_path
+            else:
+                model_path = download_model()
+                
+            if model_path and os.path.exists(model_path):
+                model.load_state_dict(torch.load(model_path, map_location=device))
+                print(f"已加载预训练模型: {model_path}")
+        
         optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum)
         
         # 打开日志文件
