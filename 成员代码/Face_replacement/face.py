@@ -2,7 +2,6 @@
 import cv2
 import dlib
 import numpy as np
-import os
 
 # Constants for configuration
 PREDICTOR_PATH = "shape_predictor_68_face_landmarks.dat"
@@ -177,7 +176,6 @@ def correct_colours(reference_image, target_image, landmarks):
     return (target_image.astype(np.float64) * reference_blur.astype(np.float64) /
             target_blur.astype(np.float64))
 
-
 def main():
     image_path1_raw = input("输入第一张图片的路径：")
     image_path2_raw = input("输入第二张图片的路径：")
@@ -216,9 +214,10 @@ def main():
 
     output_image = image1 * (1.0 - combined_mask) + color_corrected_image2 * combined_mask
 
-    cv2.imwrite('output.jpg', output_image.astype(np.uint8))
-    print("面部替换完成，结果保存为 output.jpg")
-
+   # 生成带时间戳的唯一输出文件名
+      output_filename = f"output_{int(time.time())}.jpg"
+      cv2.imwrite(output_filename, output_image.astype(np.uint8))
+      print(f"面部替换完成，结果保存为 {output_filename}")
 
 if __name__ == '__main__':
     main()
