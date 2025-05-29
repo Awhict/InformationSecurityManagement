@@ -1,2 +1,42 @@
+# MNIST 投毒攻击实验
 
-本项目围绕 MNIST 数据集，运用 AlexNet 模型开展投毒攻击实验。在模型搭建环节，构建针对 MNIST 数据特点优化的 AlexNet，卷积层精准抓取数字图像的笔画形状、端点等关键特征，池化层通过下采样减少数据量并保留核心特征，全连接层整合特征完成数字类别的判定，各层协同运作。数据处理上，从 MNIST 获取原始训练与测试数据，借助select_subset函数随机抽取 1/10 训练数据，再依据设定的投毒、干净比例，通过fetch_datasets函数，对投毒图像更改标签、干净图像标签不变，合并生成含投毒样本的训练集，同时抽取 1/10 测试集作为纯净测试数据。训练阶段采用 Adam 优化器（学习率 0.001），模型对输入图像预测后计算与真实标签的损失，经反向传播更新参数并记录训练损失。每轮训练结束，在纯净测试集计算准确率，通过特定函数展示正确与错误分类图像、绘制准确率和损失曲线，全方位呈现模型在投毒环境下的性能变化，助力深入探究模型面对恶意数据时的表现。
+本项目围绕 MNIST 数据集，运用简单的 MLP 模型开展投毒攻击实验。
+
+## 项目概述
+
+- **模型架构**：使用两层全连接神经网络 (MLP)，针对 MNIST 数据特点优化，能够有效识别手写数字图像
+- **数据集**：使用标准 MNIST 数据集，包含 60,000 张训练图像和 10,000 张测试图像
+- **预训练模型**：提供了预训练模型下载功能，可通过 `--use_pretrained` 参数加载
+- **模型下载链接**：[预训练模型](https://drive.google.com/uc?id=1pHtflNlxmxGMsMxPoHe1ytam1p4H4OUA)
+- **数据集链接**：[MNIST 数据集](http://yann.lecun.com/exdb/mnist/)
+
+## 使用方法
+
+1. 安装依赖：
+```
+pip install torch torchvision numpy gdown
+```
+
+2. 运行训练：
+```
+python main.py --epochs 10 --batch_size 64
+```
+
+3. 使用预训练模型：
+```
+python main.py --use_pretrained
+```
+
+## 参数说明
+
+- `--data_root`：数据存储路径，默认 `./data`
+- `--log_file`：日志文件路径，默认 `./training_log.txt`
+- `--batch_size`：训练批次大小，默认 64
+- `--test_batch_size`：测试批次大小，默认 1000
+- `--epochs`：训练轮数，默认 10
+- `--lr`：学习率，默认 0.01
+- `--momentum`：SGD 动量，默认 0.5
+- `--seed`：随机种子，默认 42
+- `--use_cuda`：是否使用 GPU，默认不使用
+- `--use_pretrained`：是否使用预训练模型，默认不使用
+- `--pretrained_path`：预训练模型路径，默认 `./pretrained_model.pt`
