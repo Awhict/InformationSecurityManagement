@@ -1,5 +1,0 @@
-requests>=2.25.0
-beautifulsoup4>=4.9.3
-prettytable>=2.1.0
-urllib3>=1.26.5
-logging>=0.5.1.2 
