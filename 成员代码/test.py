@@ -5,9 +5,9 @@ import numpy as np
 
 # 配置常量：用于面部特征点预测器路径、缩放比例、羽化量、颜色校正模糊比例等
 PREDICTOR_PATH = "shape_predictor_68_face_landmarks.dat"
-SCALE_FACTOR = 1
-FEATHER_AMOUNT = 11
-COLOUR_CORRECT_BLUR_FRAC = 0.6
+SCALE_FACTOR = 4
+FEATHER_AMOUNT = 2
+COLOUR_CORRECT_BLUR_FRAC = 1
 
 # 定义面部特征点的索引范围
 FACE_POINTS = list(range(17, 68))
